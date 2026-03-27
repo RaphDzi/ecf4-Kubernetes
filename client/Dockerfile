@@ -1,13 +1,18 @@
 # ─────────────────────────────────────────
 # Stage 1 : Build
 # ─────────────────────────────────────────
-FROM node:16-alpine AS builder
+# node-sass@4.14.1 requiert Node 14 max
+# (node-gyp incompatible avec Node 16+)
+FROM node:14-alpine AS builder
 
 WORKDIR /app
 
+# Dépendances système nécessaires pour compiler node-sass via node-gyp
+RUN apk add --no-cache python3 make g++
+
 # Copier package.json en premier pour profiter du cache npm
-COPY package.json package-lock.json* ./
-RUN npm ci --silent
+COPY package.json ./
+RUN npm install --legacy-peer-deps
 
 # Copier le reste du code source
 COPY . .

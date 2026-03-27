@@ -1,0 +1,213 @@
+# ─────────────────────────────────────────
+# Réseau partagé entre tous les services
+# ─────────────────────────────────────────
+networks:
+  ecommerce-net:
+    driver: bridge
+
+# ─────────────────────────────────────────
+# Volumes persistants
+# ─────────────────────────────────────────
+volumes:
+  mysql-data:
+  redis-data:
+
+services:
+
+  # ───────────────────────────────────────
+  # MySQL
+  # ───────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: ecommerce-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "${DB_PORT}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - ecommerce-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ───────────────────────────────────────
+  # Redis
+  # ───────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: ecommerce-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    ports:
+      - "${REDIS_PORT}:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - ecommerce-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ───────────────────────────────────────
+  # Authentication Service
+  # ───────────────────────────────────────
+  authentication-service:
+    build:
+      context: ./server/authentication-service
+      dockerfile: Dockerfile
+    container_name: ecommerce-auth
+    restart: unless-stopped
+    environment:
+      PORT: ${AUTHENTICATION_SERVICE_PORT}
+      ACTIVE_PROFILE: ${ACTIVE_PROFILE}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_SCHEMA: ${DB_SCHEMA}
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
+      REACT_CLIENT_URL: ${REACT_CLIENT_URL}
+    ports:
+      - "${AUTHENTICATION_SERVICE_PORT}:${AUTHENTICATION_SERVICE_PORT}"
+    networks:
+      - ecommerce-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${AUTHENTICATION_SERVICE_PORT}/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ───────────────────────────────────────
+  # Common Data Service
+  # ───────────────────────────────────────
+  common-data-service:
+    build:
+      context: ./server/common-data-service
+      dockerfile: Dockerfile
+    container_name: ecommerce-common-data
+    restart: unless-stopped
+    environment:
+      PORT: ${COMMON_DATA_SERVICE_PORT}
+      ACTIVE_PROFILE: ${ACTIVE_PROFILE}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_SCHEMA: ${DB_SCHEMA}
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REACT_CLIENT_URL: ${REACT_CLIENT_URL}
+    ports:
+      - "${COMMON_DATA_SERVICE_PORT}:${COMMON_DATA_SERVICE_PORT}"
+    networks:
+      - ecommerce-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${COMMON_DATA_SERVICE_PORT}/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ───────────────────────────────────────
+  # Payment Service
+  # ───────────────────────────────────────
+  payment-service:
+    build:
+      context: ./server/payment-service
+      dockerfile: Dockerfile
+    container_name: ecommerce-payment
+    restart: unless-stopped
+    environment:
+      PORT: ${PAYMENT_SERVICE_PORT}
+      ACTIVE_PROFILE: ${ACTIVE_PROFILE}
+      REACT_CLIENT_URL: ${REACT_CLIENT_URL}
+    ports:
+      - "${PAYMENT_SERVICE_PORT}:${PAYMENT_SERVICE_PORT}"
+    networks:
+      - ecommerce-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${PAYMENT_SERVICE_PORT}/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ───────────────────────────────────────
+  # Search Suggestion Service
+  # ───────────────────────────────────────
+  search-suggestion-service:
+    build:
+      context: ./server/search-suggestion-service
+      dockerfile: Dockerfile
+    container_name: ecommerce-search-suggestion
+    restart: unless-stopped
+    environment:
+      PORT: ${SEARCH_SUGGESTION_SERVICE_PORT}
+      ACTIVE_PROFILE: ${ACTIVE_PROFILE}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_SCHEMA: ${DB_SCHEMA}
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REACT_CLIENT_URL: ${REACT_CLIENT_URL}
+    ports:
+      - "${SEARCH_SUGGESTION_SERVICE_PORT}:${SEARCH_SUGGESTION_SERVICE_PORT}"
+    networks:
+      - ecommerce-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      common-data-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${SEARCH_SUGGESTION_SERVICE_PORT}/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ───────────────────────────────────────
+  # Client React
+  # ───────────────────────────────────────
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_ENVIRONMENT: ${REACT_APP_ENVIRONMENT}
+    container_name: ecommerce-client
+    restart: unless-stopped
+    ports:
+      - "${REACT_APP_PORT}:3000"
+    networks:
+      - ecommerce-net
+    depends_on:
+      - authentication-service
+      - common-data-service
+      - payment-service
+      - search-suggestion-service

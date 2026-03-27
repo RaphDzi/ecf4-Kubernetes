@@ -16,7 +16,7 @@ RUN mvn clean package -DskipTests -B
 # ─────────────────────────────────────────
 # Stage 2 : Runtime
 # ─────────────────────────────────────────
-FROM openjdk:11-jre-slim AS runtime
+FROM eclipse-temurin:11-jre AS runtime
 
 LABEL maintainer="ecommerce-team"
 LABEL service="search-suggestion-service"
